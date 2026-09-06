@@ -26,15 +26,17 @@ async function initializeBot() {
 
   sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
+    printQRInTerminal: false,
+    browser: ['Dio-Bot', 'Safari', '1.0.0'],
   });
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n≽^•ˑ•ྀི≼ ESCANEA ESTE QR CON WHATSAPP ≽^•ˑ•ྀི≼\n');
-      qrcode.generate(qr, { small: true });
+      console.log('\n≽^•ˑ•ྀི≼ CÓDIGO DE VINCULACIÓN ≽^•ˑ•ྀི≼\n');
+      console.log(`📱 Código: ${qr}\n`);
+      console.log('Cópia este código y úsalo en WhatsApp Web o tu dispositivo\n');
     }
 
     if (connection === 'connecting') {
@@ -51,7 +53,7 @@ async function initializeBot() {
       isConnected = false;
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       if (reason === DisconnectReason.loggedOut) {
-        console.log(`${config.styles.colors.error} Sesión cerrada. Escanea el QR de nuevo.`);
+        console.log(`${config.styles.colors.error} Sesión cerrada. Escanea el código de nuevo.`);
         process.exit();
       } else {
         console.log(`${config.styles.colors.error} Conexión perdida. Reconectando...`);
