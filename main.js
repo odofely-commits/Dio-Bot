@@ -1,19 +1,26 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, MessageType, Boom } = require('baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Boom } = require('baileys');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
+// Importar módulos de comandos
+const { handleAction, sendActionImage } = require('./commands/acciones');
+const { sendNekoImage, sendWaifuImage, sendMaidImage, sendKitsuneImage } = require('./commands/imagenes');
+const { playTrivia, playTruthOrDare, playEightBall, playCoinFlip, playChoose } = require('./commands/juegos');
+const { checkBalance, claimDaily, giveCoins, playRoulette } = require('./commands/economia');
+const { warnUser, checkWarns, muteUser, unmuteUser, kickUser, banUser, clearWarns } = require('./commands/moderacion');
+const { showProfile, showStats, showLevel, showAvatar } = require('./commands/perfil');
+const { sendHelp, sendInfo, sendVersion, ping, sendOwnerInfo } = require('./commands/utilidades');
+
 let sock;
 let isConnected = false;
 
-// Crear directorio de sesión si no existe
 const authDir = './sessions';
 if (!fs.existsSync(authDir)) {
   fs.mkdirSync(authDir, { recursive: true });
 }
 
-// Inicializar bot
 async function initializeBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
@@ -22,7 +29,6 @@ async function initializeBot() {
     printQRInTerminal: true,
   });
 
-  // Evento: QR generado
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
@@ -54,10 +60,8 @@ async function initializeBot() {
     }
   });
 
-  // Guardar credenciales
   sock.ev.on('creds.update', saveCreds);
 
-  // Procesar mensajes
   sock.ev.on('messages.upsert', async (message) => {
     try {
       const msg = message.messages[0];
@@ -73,182 +77,239 @@ async function initializeBot() {
         messageText = msg.message.extendedTextMessage.text;
       }
 
-      // Verificar si es un comando
       if (!messageText.startsWith(config.prefix)) return;
 
       const commandName = messageText.slice(config.prefix.length).split(' ')[0].toLowerCase();
       const args = messageText.slice(config.prefix.length).split(' ').slice(1);
+      const userId = msg.key.participant || from;
 
-      console.log(`${config.styles.colors.main} Comando recibido: ${commandName}`);
+      console.log(`${config.styles.colors.main} Comando: ${commandName} | Args: ${args.join(', ')}`);
 
-      // Procesar comando
-      await handleCommand(sock, from, commandName, args, msg);
+      await handleCommand(sock, from, userId, commandName, args, msg);
 
     } catch (error) {
-      console.error(`${config.styles.colors.error} Error procesando mensaje:`, error);
+      console.error(`${config.styles.colors.error} Error:`, error);
     }
   });
 }
 
-// Manejar comandos
-async function handleCommand(sock, from, command, args, msg) {
+async function handleCommand(sock, from, userId, command, args, msg) {
   try {
     switch (command) {
-      case 'help':
-      case 'menu':
-        await sendMenu(sock, from);
+      // ACCIONES
+      case 'hug':
+      case 'kiss':
+      case 'pat':
+      case 'slap':
+      case 'bite':
+      case 'lick':
+      case 'cuddle':
+      case 'poke':
+      case 'tickle':
+      case 'punch':
+        await sendActionImage(sock, from, command);
         break;
 
+      // IMÁGENES
       case 'neko':
         await sendNekoImage(sock, from);
         break;
-
       case 'waifu':
         await sendWaifuImage(sock, from);
         break;
-
-      case 'hug':
-        await sendAction(sock, from, 'hug', args);
+      case 'maid':
+        await sendMaidImage(sock, from);
+        break;
+      case 'kitsune':
+      case 'fox':
+        await sendKitsuneImage(sock, from);
         break;
 
-      case 'kiss':
-        await sendAction(sock, from, 'kiss', args);
+      // JUEGOS
+      case 'trivia':
+        await playTrivia(sock, from);
+        break;
+      case 'truth':
+        await playTruthOrDare(sock, from, 'truth');
+        break;
+      case 'dare':
+      case 'reto':
+        await playTruthOrDare(sock, from, 'dare');
+        break;
+      case '8ball':
+      case 'ball':
+        await playEightBall(sock, from);
+        break;
+      case 'volado':
+      case 'coinflip':
+      case 'flip':
+        await playCoinFlip(sock, from);
+        break;
+      case 'elige':
+      case 'choose':
+        await playChoose(sock, from, args);
         break;
 
-      case 'pat':
-        await sendAction(sock, from, 'pat', args);
+      // ECONOMÍA
+      case 'balance':
+      case 'bal':
+      case 'coins':
+        await checkBalance(sock, from, userId);
+        break;
+      case 'daily':
+        await claimDaily(sock, from, userId);
+        break;
+      case 'give':
+      case 'pay':
+      case 'transfer':
+        if (args.length < 2) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}give @usuario cantidad`
+          });
+        } else {
+          await giveCoins(sock, from, userId, args[0], args[1]);
+        }
+        break;
+      case 'ruleta':
+      case 'roulette':
+      case 'rt':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}ruleta <cantidad>`
+          });
+        } else {
+          await playRoulette(sock, from, userId, args[0]);
+        }
         break;
 
-      case 'slap':
-        await sendAction(sock, from, 'slap', args);
+      // MODERACIÓN
+      case 'warn':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}warn @usuario [razón]`
+          });
+        } else {
+          await warnUser(sock, from, args[0], args.slice(1).join(' '));
+        }
+        break;
+      case 'warns':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}warns @usuario`
+          });
+        } else {
+          await checkWarns(sock, from, args[0]);
+        }
+        break;
+      case 'mute':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}mute @usuario [tiempo]`
+          });
+        } else {
+          await muteUser(sock, from, args[0], args[1] || 3600);
+        }
+        break;
+      case 'unmute':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}unmute @usuario`
+          });
+        } else {
+          await unmuteUser(sock, from, args[0]);
+        }
+        break;
+      case 'kick':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}kick @usuario`
+          });
+        } else {
+          await kickUser(sock, from, args[0]);
+        }
+        break;
+      case 'ban':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}ban @usuario`
+          });
+        } else {
+          await banUser(sock, from, args[0]);
+        }
+        break;
+      case 'clearwarns':
+        if (!args[0]) {
+          await sock.sendMessage(from, {
+            text: `${config.styles.colors.error} Uso: ${config.prefix}clearwarns @usuario`
+          });
+        } else {
+          await clearWarns(sock, from, args[0]);
+        }
         break;
 
+      // PERFIL
+      case 'perfil':
+      case 'profile':
+        await showProfile(sock, from, userId);
+        break;
+      case 'stats':
+      case 'estadisticas':
+        await showStats(sock, from, userId);
+        break;
+      case 'level':
+      case 'nivel':
+        await showLevel(sock, from, userId);
+        break;
+      case 'avatar':
+        if (args[0]) {
+          await showAvatar(sock, from, args[0]);
+        } else {
+          await showAvatar(sock, from, userId);
+        }
+        break;
+
+      // UTILIDADES
+      case 'help':
+      case 'menu':
+      case 'commands':
+      case 'comandos':
+        await sendHelp(sock, from);
+        break;
+      case 'info':
+      case 'botinfo':
+        await sendInfo(sock, from);
+        break;
+      case 'version':
+      case 'v':
+        await sendVersion(sock, from);
+        break;
       case 'ping':
-        await sock.sendMessage(from, {
-          text: `${config.styles.colors.success} ¡Pong! Estoy activo ${config.styles.colors.main}`
-        });
+        await ping(sock, from);
         break;
-
       case 'owner':
-        await sock.sendMessage(from, {
-          text: `${config.styles.colors.main} Creado por: ${config.owner} ${config.styles.colors.secondary}`
-        });
+      case 'creador':
+        await sendOwnerInfo(sock, from);
         break;
 
       default:
         await sock.sendMessage(from, {
-          text: `${config.styles.colors.error} Comando no reconocido. Usa ${config.prefix}help para ver los comandos disponibles.`
+          text: `${config.styles.colors.error} Comando no reconocido ≽^•ˑ•ྀི≼\n\nUsa ${config.prefix}help para ver los comandos disponibles`
         });
     }
   } catch (error) {
-    console.error(`${config.styles.colors.error} Error en comando:`, error);
+    console.error(`${config.styles.colors.error} Error:`, error);
     await sock.sendMessage(from, {
       text: `${config.styles.colors.error} Hubo un error al procesar el comando.`
-    });
+    }).catch(() => {});
   }
 }
 
-// Enviar menú
-async function sendMenu(sock, from) {
-  const menu = `
-${config.styles.colors.main} ${config.styles.prefix}
-✧･ﾟ: *${config.botName}* :*ﾟ･✧
-${config.styles.colors.main} ${config.styles.prefix}
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-📸 *ACCIONES*
-${config.styles.colors.secondary}
-#hug @usuario - Abrazo
-#kiss @usuario - Beso
-#pat @usuario - Acaricia
-#slap @usuario - Bofetada
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🖼️ *IMÁGENES*
-
-#neko - Neko aleatorio
-#waifu - Waifu aleatorio
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 *JUEGOS*
-
-Próximamente...
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-⚙️ *UTILIDADES*
-
-#ping - Ver si estoy activo
-#owner - Información del creador
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-
-${config.styles.colors.main} ≽^•ˑ•ྀི≼ Soy Dio, tu bot supremo ≽^•ˑ•ྀི≼ ${config.styles.colors.main}
-  `;
-
-  await sock.sendMessage(from, { text: menu });
-}
-
-// Enviar imagen Neko
-async function sendNekoImage(sock, from) {
-  try {
-    const axios = require('axios');
-    const response = await axios.get(`${config.nekosApi}/img/neko`);
-    const imageUrl = response.data.url;
-
-    await sock.sendMessage(from, {
-      image: { url: imageUrl },
-      caption: `${config.styles.colors.main} ≽^•ˑ•ྀི≼ Neko uwu ≽^•ˑ•ྀི≼ ${config.styles.colors.main}`
-    });
-  } catch (error) {
-    console.error('Error obteniendo imagen neko:', error);
-    await sock.sendMessage(from, {
-      text: `${config.styles.colors.error} No pude obtener la imagen neko...`
-    });
-  }
-}
-
-// Enviar imagen Waifu
-async function sendWaifuImage(sock, from) {
-  try {
-    const axios = require('axios');
-    const response = await axios.get(`${config.waifuApi}/search?is_nsfw=false&many=false`);
-    const imageUrl = response.data.images[0].url;
-
-    await sock.sendMessage(from, {
-      image: { url: imageUrl },
-      caption: `${config.styles.colors.secondary} ✧･ﾟ: *Waifu* :*ﾟ･✧ ${config.styles.colors.secondary}`
-    });
-  } catch (error) {
-    console.error('Error obteniendo imagen waifu:', error);
-    await sock.sendMessage(from, {
-      text: `${config.styles.colors.error} No pude obtener la imagen waifu...`
-    });
-  }
-}
-
-// Enviar acción
-async function sendAction(sock, from, action, args) {
-  const actions = {
-    hug: '≽^•ˑ•ྀི≼ *abraza* a',
-    kiss: '💋 *besa* a',
-    pat: '≽^•ˑ•ྀི≼ *acaricia* a',
-    slap: '�� *bofetea* a'
-  };
-
-  const mention = args[0] ? `@${args[0]}` : 'alguien';
-  const message = `${config.styles.colors.main} ${actions[action]} ${mention} ${config.styles.colors.main}`;
-
-  await sock.sendMessage(from, { text: message });
-}
-
-// Iniciar bot
 console.log(`\n${config.styles.colors.main} ${config.styles.prefix}`);
 console.log(`${config.styles.colors.main} Iniciando ${config.botName} v${config.version}...`);
 console.log(`${config.styles.colors.main} ${config.styles.prefix}\n`);
 
 initializeBot().catch(console.error);
 
-// Manejo de errores global
 process.on('uncaughtException', (error) => {
   console.error(`${config.styles.colors.error} Error no capturado:`, error);
 });
