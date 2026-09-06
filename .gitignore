@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+sessions/
+*.log
+.DS_Store
+dist/
+build/
+.vscode/
+*.swp
+*.swo
+*~
+.idea/
+auth_info_baileys.json
